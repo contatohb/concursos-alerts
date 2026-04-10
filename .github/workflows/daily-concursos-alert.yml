@@ -38,6 +38,10 @@ jobs:
           MONITOR_RECIPIENT: huddsong@gmail.com
           GMAIL_SENDER: huddsong@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_SMTP_USER: huddsong@gmail.com
+          GMAIL_SMTP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MONITOR_SMTP_USER: huddsong@gmail.com
+          MONITOR_SMTP_PASS: ${{ secrets.GMAIL_APP_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
