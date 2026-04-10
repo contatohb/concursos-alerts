@@ -374,13 +374,18 @@ def _card_html(concurso: Dict, normalizar_data_fn) -> str:
 
     # ── Aplicar fallbacks em cada cargo ─────────────────────────────────────────
     # Garante que nenhum campo fique em branco no card
+    _FORMACAO_POR_CAT = {
+        "veterinario":   "Médico Veterinário",
+        "qualquer_area": "Nível Superior (qualquer curso)",
+        "nivel_medio":   "Nível Médio",
+    }
     for _c in cargos_sal:
-        # Formacao: usar nome do cargo como fallback
+        # Formacao: derivar da categoria (mais correto que usar o nome do cargo)
         if not _c.get("formacao"):
-            _c["formacao"] = _c.get("cargo", "")
-        # Vagas: usar "Ver edital" como fallback
+            _c["formacao"] = _FORMACAO_POR_CAT.get(_c.get("categoria", ""), "")
+        # Vagas: CR (cadastro de reserva) quando desconhecido — NUNCA "Ver edital"
         if not _c.get("vagas") and _c.get("vagas") != 0:
-            _c["vagas"] = "Ver edital"
+            _c["vagas"] = "CR"
         # Cidades: usar cidade/estado do concurso como fallback
         if not _c.get("cidades"):
             _cid_parts = []
