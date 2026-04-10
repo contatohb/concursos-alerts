@@ -917,8 +917,13 @@ def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
             categoria = categoria_real
             formacao_final = escolaridade_edital
         else:
-            # Fallback: usar o nome do cargo como formação exigida
-            formacao_final = cargo_info.get('formacao', '') or cargo_nome
+            # Fallback: derivar formação da categoria (nunca usar nome do cargo como formação)
+            _FORMACAO_POR_CAT = {
+                "veterinario":   "Médico Veterinário",
+                "qualquer_area": "Nível Superior (qualquer curso)",
+                "nivel_medio":   "Nível Médio",
+            }
+            formacao_final = _FORMACAO_POR_CAT.get(categoria, cargo_info.get('formacao', '') or cargo_nome)
 
         # Extrair cidades de lotação do trecho (e fallback no texto completo)
         cidades = _extrair_cidades_do_texto(trecho)
