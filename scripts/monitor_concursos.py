@@ -291,14 +291,20 @@ def _atende_criterios(concurso: Dict) -> bool:
             return True
         return False
 
-    # Salário deve ser >= 10k
+    # Salário confirmado >= 10k: passa sempre (qualquer categoria)
     if salario and salario >= SALARIO_MINIMO:
         return True
 
-    # Salário não identificado: incluir apenas se for veterinário
-    # (para análise manual), descartar os demais
-    if salario is None and eh_veterinario:
-        return True
+    # Salário NÃO identificado nas listagens iniciais é comum no PCI/Concursos no Brasil
+    # — o salário real só aparece nas páginas de detalhe do edital.
+    # Política: incluir todas as categorias reconhecidas para não descartar por falta de dado.
+    if salario is None:
+        if eh_veterinario:
+            return True  # Sempre incluir veterinário para análise manual
+        if eh_qualquer_superior:
+            return True  # Incluir nível superior sem salário confirmado
+        if eh_nivel_medio:
+            return True  # Incluir nível médio sem salário confirmado
 
     return False
 
