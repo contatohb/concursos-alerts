@@ -541,11 +541,50 @@ def _extrair_detalhes_pci(url: str, session: requests.Session) -> Dict:
     # Guardar o texto plano do artigo para uso posterior (busca de link na banca)
     detalhes["_texto_artigo"] = texto_flat
 
-    # Cidade e estado — procurar padrão "Cidade/UF" ou "Cidade - UF"
-    m = re.search(r'\b([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*[/\-]\s*([A-Z]{2})\b', texto_flat)
-    if m:
-        detalhes["cidade"] = m.group(1).strip()
-        detalhes["estado"] = m.group(2).strip()
+    # Cidade e estado — estratégia em 3 etapas para evitar cidades erradas:
+    # 1. Tentar extrair do orgão (ex: "Prefeitura de São Paulo" → "São Paulo")
+    # 2. Buscar padrão Cidade/UF em contexto relevante (próximo a "prefeitura", "município", etc.)
+    # 3. Fallback: primeira ocorrência no texto
+    _orgao_raw = soup.find("h1") or soup.find("title")
+    _orgao_txt = _orgao_raw.get_text(strip=True) if _orgao_raw else ""
+
+    _cidade_encontrada = ""
+    _estado_encontrado = ""
+
+    # Etapa 1: extrair do título/h1 da página
+    _m1 = re.search(r'([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*[/\-]\s*([A-Z]{2})', _orgao_txt)
+    if _m1:
+        _cidade_encontrada = _m1.group(1).strip()
+        _estado_encontrado = _m1.group(2).strip()
+
+    # Etapa 2: procurar em parágrafos/linhas com palavras-chave de contexto
+    if not _cidade_encontrada:
+        _ctx_keywords = ["prefeitura", "município", "municipio", "câmara", "governo", "estado de",
+                         "concurso público", "concurso publico", "edital"]
+        for _linha in texto.splitlines():
+            _l = _linha.strip()
+            if len(_l) < 10:
+                continue
+            _l_lower = _l.lower()
+            if not any(k in _l_lower for k in _ctx_keywords):
+                continue
+            _m2 = re.search(r'([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*/\s*([A-Z]{2})', _l)
+            if _m2:
+                _cidade_encontrada = _m2.group(1).strip()
+                _estado_encontrado = _m2.group(2).strip()
+                break
+
+    # Etapa 3: fallback — primeira ocorrência no texto completo
+    if not _cidade_encontrada:
+        _m3 = re.search(r'([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*[/\-]\s*([A-Z]{2})', texto_flat)
+        if _m3:
+            _cidade_encontrada = _m3.group(1).strip()
+            _estado_encontrado = _m3.group(2).strip()
+
+    if _cidade_encontrada:
+        detalhes["cidade"] = _cidade_encontrada
+    if _estado_encontrado:
+        detalhes["estado"] = _estado_encontrado
 
     return detalhes
 
@@ -605,11 +644,28 @@ def _extrair_detalhes_cnb(url: str, session: requests.Session) -> Dict:
                 detalhes["link_inscricao"] = href
                 break
 
-    # Cidade/Estado
-    m = re.search(r'\b([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*[/\-]\s*([A-Z]{2})\b', texto)
-    if m:
-        detalhes["cidade"] = m.group(1).strip()
-        detalhes["estado"] = m.group(2).strip()
+    # Cidade/Estado — buscar em contexto relevante antes do primeiro match
+    _cidade_cnb = ""
+    _estado_cnb = ""
+    _ctx_kw = ["prefeitura", "município", "municipio", "câmara", "governo", "edital", "concurso público"]
+    for _ln in texto.split("."):
+        _ln = _ln.strip()
+        if not any(k in _ln.lower() for k in _ctx_kw):
+            continue
+        _mc = re.search(r'\b([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*/\s*([A-Z]{2})\b', _ln)
+        if _mc:
+            _cidade_cnb = _mc.group(1).strip()
+            _estado_cnb = _mc.group(2).strip()
+            break
+    if not _cidade_cnb:
+        _mf = re.search(r'\b([A-Z][a-záéíóúâêôãõç\s]{3,30})\s*[/\-]\s*([A-Z]{2})\b', texto)
+        if _mf:
+            _cidade_cnb = _mf.group(1).strip()
+            _estado_cnb = _mf.group(2).strip()
+    if _cidade_cnb:
+        detalhes["cidade"] = _cidade_cnb
+    if _estado_cnb:
+        detalhes["estado"] = _estado_cnb
 
     return detalhes
 
@@ -658,6 +714,10 @@ def _parse_pci_item(item, base_url: str = "https://www.pciconcursos.com.br") -> 
             "nivel": nivel,
             "salario_texto": vagas_str,
             "salario_valor": salario_valor,
+            # salario_fonte="listagem" = valor extraído da listagem agregada.
+            # Pode ser o maior cargo do edital, NÃO necessariamente o cargo aqui.
+            # O edital_parser confirmará por cargo individual.
+            "salario_fonte": "listagem",
             "vagas": vagas_str,
             "banca": "",
             "cidade": "",
@@ -991,6 +1051,40 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
 
     logger.info(f"Total coletado (todas as fontes): {len(todos)}")
 
+    # ── Deduplicação cross-source ───────────────────────────────────────────
+    # Mesmo concurso pode aparecer em PCI E ConcursosNoBrasil com links diferentes.
+    # Chave de dedup: órgão normalizado + primeiras palavras do cargo.
+    def _dedup_key(c: Dict) -> str:
+        orgao_n = re.sub(r"[^\w\s]", "", c.get("orgao", "").lower().strip())
+        orgao_n = re.sub(r"\s+", " ", orgao_n).strip()
+        for prefix in ["prefeitura municipal de ", "prefeitura de ",
+                       "camara municipal de ", "governo do estado de ",
+                       "secretaria ", "municipio de "]:
+            if orgao_n.startswith(prefix):
+                orgao_n = orgao_n[len(prefix):]
+                break
+        cargo_n = re.sub(r"[^\w\s]", "", c.get("cargo", "").lower().strip())
+        cargo_n = " ".join(cargo_n.split()[:4])
+        return f"{orgao_n}|{cargo_n}"
+
+    todos_dedup: List[Dict] = []
+    seen_dedup_cs: set = set()
+    for _c in todos:
+        _k = _dedup_key(_c)
+        if _k and _k not in seen_dedup_cs:
+            seen_dedup_cs.add(_k)
+            todos_dedup.append(_c)
+        elif _k:
+            # Manter o que tiver link_detalhe (PCI/CNB > Deno API sem link)
+            _existing = next((x for x in todos_dedup if _dedup_key(x) == _k), None)
+            if _existing and not _existing.get("link_detalhe") and _c.get("link_detalhe"):
+                todos_dedup.remove(_existing)
+                todos_dedup.append(_c)
+    _removidos_cs = len(todos) - len(todos_dedup)
+    if _removidos_cs > 0:
+        logger.info(f"[DEDUP cross-source] {_removidos_cs} duplicata(s) removida(s)")
+    todos = todos_dedup
+
     # Filtrar por critérios
     filtrados = [c for c in todos if _atende_criterios(c)]
     logger.info(f"Total após filtro de critérios: {len(filtrados)}")
@@ -1322,12 +1416,16 @@ def formatar_email_concursos(concursos: List[Dict], erros: List[str]) -> str:
                     # Fallback: cargo genérico da listagem
                     cargo = c.get("cargo", "")
                     salario = c.get("salario_texto", "") or c.get("salario_valor", "")
+                    sal_fonte = c.get("salario_fonte", "edital")
                     if isinstance(salario, float):
                         salario = f"R$ {salario:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                     if cargo:
                         linhas.append(f"  Cargo          : {cargo}")
                     if salario:
-                        linhas.append(f"  Remuneracao    : {salario}")
+                        if sal_fonte == "listagem":
+                            linhas.append(f"  Remuneracao    : até {salario} (verificar edital — valor da listagem)")
+                        else:
+                            linhas.append(f"  Remuneracao    : {salario}")
 
                 di_ini = normalizar_data(c.get("data_inscricao_inicio", ""))
                 di_fim = normalizar_data(c.get("data_inscricao_fim", ""))

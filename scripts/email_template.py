@@ -359,12 +359,18 @@ def _card_html(concurso: Dict, normalizar_data_fn) -> str:
     cargos_sal = concurso.get("cargos_com_salario", []) or []
 
     # Fallback: construir lista a partir dos campos legados
+    # IMPORTANTE: salario_fonte="listagem" = valor extraído da listagem agregada (pode ser
+    # o maior cargo do edital, não o cargo específico exibido aqui).
     if not cargos_sal:
         cargo_txt = concurso.get("cargo", "")
         sal_txt   = concurso.get("salario_texto", "")
         sv        = concurso.get("salario_valor")
-        if sv:
+        sal_fonte = concurso.get("salario_fonte", "edital")  # "listagem" = não confirmado por cargo
+        if sv and sal_fonte != "listagem":
             sal_txt = _fmt_salario(float(sv), sal_txt)
+        elif sv and sal_fonte == "listagem":
+            # Salário da listagem: pode ser de outro cargo — não exibir como confirmado
+            sal_txt = f"até {_fmt_salario(float(sv), sal_txt)} (verificar edital)"
         if cargo_txt or sal_txt:
             cargos_sal = [{
                 "cargo": cargo_txt, "salario_texto": sal_txt,
