@@ -870,34 +870,35 @@ def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
             logger.info(f"[FILTRO] Cargo descartado (mestrado/doutorado): {cargo_nome}")
             continue
 
-        salarios = []
+        # Buscar salário APÓS o cargo no trecho (posição relativa ao match)
+        # O trecho começa 500 chars antes do match; o cargo está ~na posição 500 do trecho.
+        # Buscamos o primeiro salário encontrado DEPOIS do início do match no trecho.
+        cargo_pos_no_trecho = min(500, match.start())  # posição aproximada do cargo no trecho
+        salarios_apos_cargo = []
+        salarios_antes_cargo = []
         for m_sal in pat_salario.finditer(trecho):
             val_str = m_sal.group(1).replace('.', '').replace(',', '.')
             try:
                 val = float(val_str)
                 if val > 500:
-                    salarios.append((val, f"R$ {m_sal.group(1)}"))
+                    if m_sal.start() >= cargo_pos_no_trecho:
+                        salarios_apos_cargo.append((m_sal.start(), val, f"R$ {m_sal.group(1)}"))
+                    else:
+                        salarios_antes_cargo.append((m_sal.start(), val, f"R$ {m_sal.group(1)}"))
             except ValueError:
                 pass
 
-        # Fallback global: se não encontrou salário no trecho local, buscar no texto completo
-        # Isso cobre editais onde cargo e salário estão em seções separadas
-        if not salarios:
-            for m_sal in pat_salario.finditer(texto_pdf):
-                val_str = m_sal.group(1).replace('.', '').replace(',', '.')
-                try:
-                    val = float(val_str)
-                    if val >= SALARIO_MINIMO:
-                        salarios.append((val, f"R$ {m_sal.group(1)}"))
-                except ValueError:
-                    pass
-            if salarios:
-                logger.debug(f"[FALLBACK] Salário encontrado globalmente para {cargo_nome}")
-
-        if not salarios:
+        # Preferência: primeiro salário APÓS o nome do cargo (mais provável ser o salário do cargo)
+        # Se não encontrar, usar o mais próximo antes do cargo
+        # NÃO usar fallback global (causa todos os cargos terem o mesmo salário máximo do doc)
+        if salarios_apos_cargo:
+            salarios_apos_cargo.sort(key=lambda x: x[0])  # ordenar por posição
+            _, salario_valor, salario_texto = salarios_apos_cargo[0]
+        elif salarios_antes_cargo:
+            salarios_antes_cargo.sort(key=lambda x: -x[0])  # mais próximo antes = maior posição
+            _, salario_valor, salario_texto = salarios_antes_cargo[0]
+        else:
             continue
-
-        salario_valor, salario_texto = max(salarios, key=lambda x: x[0])
         if salario_valor < SALARIO_MINIMO:
             continue
 
@@ -927,25 +928,7 @@ def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
 
         # Extrair cidades de lotação do trecho (e fallback no texto completo)
         cidades = _extrair_cidades_do_texto(trecho)
-        if not cidades:
-            # Buscar padrões de lotação no texto completo
-            # Padrão 1: "LOTAÇÃO: Cidade/UF" ou "lotação em Cidade-UF"
-            # Padrão 1: "LOTAÇÃO: ... em Cidade-UF"
-            m_lot = re.search(
-                r'(?i)lota[\u00e7c][a\u00e3]o[:\s][^\n]{0,120}?\bem\s+([A-Z][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00e2\u00ea\u00f4\u00e3\u00f5\u00e7\s]{2,30}?)\s*[-/]\s*([A-Z]{2})\b',
-                texto_pdf
-            )
-            if not m_lot:
-                # Padrão 2: "LOTAÇÃO: Cidade/UF" direto
-                m_lot = re.search(
-                    r'(?i)lota[\u00e7c][a\u00e3]o[:\s]+([A-Z][a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00e2\u00ea\u00f4\u00e3\u00f5\u00e7\s]{2,30}?)\s*[-/]\s*([A-Z]{2})\b',
-                    texto_pdf
-                )
-            if m_lot:
-                cidade_nome = m_lot.group(1).strip().rstrip(',;. ')
-                cidades = [f"{cidade_nome}/{m_lot.group(2).strip()}"]
-            else:
-                cidades = []
+        # Não usar fallback no texto global: causa cidade de outro cargo/seção ser atribuída
 
         # Extrair número de vagas do trecho
         vagas_trecho = cargo_info.get('vagas', '')

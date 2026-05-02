@@ -57,9 +57,31 @@ def _save_json(data, path: str) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def _ja_enviou_hoje(log_path: str) -> bool:
+    """Retorna True se já enviou email com sucesso hoje (evita duplicatas em retries do Render)."""
+    if not os.path.exists(log_path):
+        return False
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            log = json.load(f)
+        hoje = date.today().isoformat()
+        for entry in reversed(log[-10:]):
+            if entry.get("sucesso") and str(entry.get("data", "")).startswith(hoje):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def main() -> int:
     today = date.today()
     logger.info(f"=== Alerta diário de concursos — {today.strftime('%d/%m/%Y')} ===")
+
+    # ── 0. Idempotência: abortar se já enviou hoje ───────────────────
+    _LOG_PATH = os.path.join(_PROJECT_DIR, "data", "envio_log.json")
+    if _ja_enviou_hoje(_LOG_PATH):
+        logger.info("Email já enviado com sucesso hoje. Execução duplicada ignorada.")
+        return 0
 
     # ── 1. Importar módulos ────────────────────────────────────────
     try:
