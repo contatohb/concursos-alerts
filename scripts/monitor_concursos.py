@@ -829,6 +829,7 @@ def scrape_cnb(session: requests.Session) -> List[Dict]:
                 "nivel": nivel,
                 "salario_texto": "",
                 "salario_valor": salario_valor,
+                "salario_fonte": "listagem",
                 "vagas": "",
                 "banca": "",
                 "cidade": "",
@@ -888,6 +889,7 @@ def scrape_deno_api(session: requests.Session) -> List[Dict]:
                     "nivel": nivel,
                     "salario_texto": vagas,
                     "salario_valor": salario_valor,
+                    "salario_fonte": "listagem",
                     "vagas": vagas,
                     "banca": "",
                     "cidade": "",
@@ -970,23 +972,28 @@ def _enriquecer(concurso: Dict, session: requests.Session) -> Dict:
                 if cargos_artigo:
                     # Usar cargos do artigo como referência, buscar salário no edital
                     # Se não encontrar edital no link direto, busca na entidade organizadora
-                    cargos_edital = buscar_salario_por_cargo(
+                    cargos_edital, edital_encontrado = buscar_salario_por_cargo(
                         url_pagina_banca, cargos_artigo,
                         orgao=orgao_c, banca=banca_c, texto_artigo=texto_c
                     )
                 else:
                     # Sem cargos do artigo, tentar parsear tabela do edital
-                    cargos_edital = extrair_cargos_do_edital(url_pagina_banca)
+                    cargos_edital, edital_encontrado = extrair_cargos_do_edital(url_pagina_banca)
                 if cargos_edital:
                     concurso["cargos_com_salario"] = cargos_edital
                     concurso["edital_analisado"] = True
                     logger.info(f"[EDITAL] {len(cargos_edital)} cargos relevantes com salário do edital")
-                else:
-                    # Edital foi analisado mas não encontrou cargos relevantes
-                    # Marcar para exclusão posterior
+                elif edital_encontrado:
+                    # PDF foi acessado e analisado, mas nenhum cargo relevante foi confirmado:
+                    # excluir o concurso (ex: apenas médicos/engenheiros, salários < 10k, etc.)
                     concurso["edital_analisado"] = True
                     concurso["edital_sem_cargos_relevantes"] = True
-                    logger.info(f"[EDITAL] Nenhum cargo relevante no edital — concurso será excluído")
+                    logger.info(f"[EDITAL] Nenhum cargo relevante no edital — concurso excluído")
+                else:
+                    # PDF não encontrado ou não legível: manter o concurso sem verificação
+                    # (salário da listagem já marcado como 'listagem' → exibido como 'verificar edital')
+                    concurso["edital_analisado"] = False
+                    logger.debug(f"[EDITAL] Edital não localizado — concurso mantido sem verificação")
             except Exception as exc:
                 logger.debug(f"[EDITAL] Erro ao extrair cargos: {exc}")
 
@@ -1128,12 +1135,15 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
                 url_pdf_convet = c.get("link_edital_pdf", "") or c.get("link_inscricao", "")
                 if url_pdf_convet:
                     try:
-                        cargos_edital = buscar_salario_por_cargo(
+                        cargos_edital, _ = buscar_salario_por_cargo(
                             url_pdf_convet,
                             [{"cargo": "Médico Veterinário", "vagas": "", "formacao": ""}],
                             orgao=c.get("orgao", ""),
                             banca=c.get("banca", "")
                         )
+                        # Blog Convet já tem cargos_com_salario definido acima; o call aqui é apenas
+                        # enriquecimento de dados (vagas, cidades). O flag edital_encontrado não altera
+                        # a lógica de filtragem porque cargos_com_salario sempre estará preenchido.
                         if cargos_edital:
                             # Usar dados do edital, preservando salário do scraper se o edital não tiver
                             cargo_edital = cargos_edital[0]
@@ -1158,17 +1168,18 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
                 c["edital_sem_cargos_relevantes"] = True
                 c["edital_analisado"] = False
         else:
-            # Sem enriquecimento: marcar como sem edital (exceto Blog Convet, já tratado acima)
-            c["edital_sem_cargos_relevantes"] = True
+            # Sem enriquecimento: não marcar como excluído
+            # (salário de listagem exibido com aviso 'verificar edital')
             c["edital_analisado"] = False
 
-    # Exigir verificação de edital: apenas concursos com cargos relevantes confirmados no edital
+    # Excluir apenas concursos onde o edital foi acessado e confirmou ausência de cargos relevantes.
+    # Concursos onde o edital não foi localizado ou não pôde ser lido são MANTIDOS
+    # (exibidos com salário da listagem marcado como 'verificar edital').
     antes = len(filtrados)
-    filtrados = [c for c in filtrados
-                 if c.get("cargos_com_salario") and not c.get("edital_sem_cargos_relevantes")]
+    filtrados = [c for c in filtrados if not c.get("edital_sem_cargos_relevantes")]
     excluidos = antes - len(filtrados)
     if excluidos > 0:
-        logger.info(f"[FILTRO EDITAL] {excluidos} concurso(s) excluído(s) (sem edital verificado ou sem cargos relevantes)")
+        logger.info(f"[FILTRO EDITAL] {excluidos} concurso(s) excluído(s) (edital confirmou sem cargos relevantes)")
 
     # Filtro de salário obrigatório pós-enriquecimento:
     # Descartar concursos cujos cargos não têm salário confirmado (>= R$ 10.000)

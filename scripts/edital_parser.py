@@ -711,27 +711,33 @@ def _verificar_mestrado_doutorado_trecho(trecho: str) -> bool:
     return any(t in trecho_lower for t in _TERMOS_POS_STRICTO)
 
 
-def extrair_cargos_do_edital(url_pagina_banca: str) -> List[Dict]:
+def extrair_cargos_do_edital(url_pagina_banca: str) -> "Tuple[List[Dict], bool]":
     """
     Função principal: dado o URL da página do concurso na banca,
     localiza o PDF do edital, extrai e retorna a lista de cargos com salários.
 
-    Retorna lista de dicts: [{cargo, vagas, formacao, salario_texto, salario_valor, categoria, cidades}]
-    Apenas cargos de interesse com salário >= R$ 10.000.
+    Retorna tupla (cargos, edital_encontrado):
+      - cargos: lista de dicts [{cargo, vagas, formacao, salario_texto, salario_valor, categoria, cidades}]
+        (apenas cargos de interesse com salário >= R$ 10.000)
+      - edital_encontrado: True se o PDF foi localizado e analisado (mesmo sem cargos relevantes),
+        False se o PDF não foi encontrado ou não pôde ser extraído (não exclui o concurso).
     """
     if not url_pagina_banca:
-        return []
+        return [], False
 
     url_pdf = _encontrar_pdf_edital(url_pagina_banca)
     if not url_pdf:
         logger.debug(f"PDF do edital não encontrado em: {url_pagina_banca}")
-        return []
+        return [], False
 
     logger.info(f"Processando edital: {url_pdf}")
     todos_cargos = _baixar_e_parsear_pdf(url_pdf)
 
     if not todos_cargos:
-        return []
+        # PDF foi encontrado mas o parser não extraiu cargos (layout não reconhecido ou
+        # PDF é imagem/escaneado). Retornamos False para NÃO excluir o concurso —
+        # não podemos confirmar ausência de cargos relevantes quando a leitura falhou.
+        return [], False
 
     cargos_relevantes = []
     for c in todos_cargos:
@@ -753,23 +759,28 @@ def extrair_cargos_do_edital(url_pagina_banca: str) -> List[Dict]:
     ordem = {"veterinario": 0, "qualquer_area": 1, "nivel_medio": 2}
     cargos_relevantes.sort(key=lambda x: (ordem.get(x["categoria"], 9), -x["salario_valor"]))
 
-    return cargos_relevantes
+    # edital_encontrado=True: PDF foi analisado (cargos podem ser vazios — nenhum relevante)
+    return cargos_relevantes, True
 
 
 def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
                               orgao: str = "", banca: str = "",
-                              texto_artigo: str = "") -> List[Dict]:
+                              texto_artigo: str = "") -> "Tuple[List[Dict], bool]":
     """
     Dado o URL da página do concurso na banca e a lista de cargos já identificados
     no artigo, busca o salário de cada cargo no texto do edital.
 
     Se não encontrar edital no link fornecido, tenta buscar na entidade organizadora.
 
-    Retorna lista de dicts: [{cargo, vagas, formacao, salario_texto, salario_valor, categoria, cidades}]
-    Apenas cargos de interesse com salário >= R$ 10.000.
+    Retorna tupla (cargos, edital_encontrado):
+      - cargos: [{cargo, vagas, formacao, salario_texto, salario_valor, categoria, cidades}]
+        (apenas cargos de interesse com salário >= R$ 10.000)
+      - edital_encontrado: True se o PDF foi localizado e o texto extraído com sucesso
+        (mesmo que nenhum cargo relevante tenha sido encontrado), False caso contrário.
+        Use False para NÃO excluir o concurso por falta de edital verificável.
     """
     if not url_pagina_banca and not (orgao or banca):
-        return []
+        return [], False
 
     # Buscar todos os PDFs do artigo
     urls_pdf = []
@@ -798,7 +809,7 @@ def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
 
     if not urls_pdf:
         logger.debug(f"Nenhum PDF encontrado para: {orgao or url_pagina_banca}")
-        return []
+        return [], False
 
     logger.info(f"Processando {len(urls_pdf)} edital(is) para busca por cargo")
 
@@ -820,7 +831,7 @@ def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
 
     texto_pdf = texto_pdf_total
     if not texto_pdf.strip():
-        return []
+        return [], False
 
     # Para cada cargo do artigo, buscar o salário no texto do edital
     cargos_com_salario = []
@@ -963,7 +974,8 @@ def buscar_salario_por_cargo(url_pagina_banca: str, cargos_artigo: List[Dict],
             'cidades': cidades,
         })
 
-    return cargos_com_salario
+    # edital_encontrado=True: texto do PDF foi extraído e analisado (mesmo se nenhum cargo relevante)
+    return cargos_com_salario, True
 
 
 def _extrair_escolaridade_do_trecho(trecho: str) -> str:

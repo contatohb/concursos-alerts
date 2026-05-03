@@ -365,11 +365,11 @@ def _card_html(concurso: Dict, normalizar_data_fn) -> str:
         cargo_txt = concurso.get("cargo", "")
         sal_txt   = concurso.get("salario_texto", "")
         sv        = concurso.get("salario_valor")
-        sal_fonte = concurso.get("salario_fonte", "edital")  # "listagem" = não confirmado por cargo
+        sal_fonte = concurso.get("salario_fonte", "listagem")  # default: não verificado por cargo
         if sv and sal_fonte != "listagem":
             sal_txt = _fmt_salario(float(sv), sal_txt)
         elif sv and sal_fonte == "listagem":
-            # Salário da listagem: pode ser de outro cargo — não exibir como confirmado
+            # Salário da listagem: pode ser de outro cargo — exibir como "até X (verificar edital)"
             sal_txt = f"até {_fmt_salario(float(sv), sal_txt)} (verificar edital)"
         if cargo_txt or sal_txt:
             cargos_sal = [{
