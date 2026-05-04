@@ -192,11 +192,19 @@ def _classificar_cargo(nome_cargo: str) -> Optional[str]:
     if not palavras:
         return None
 
-    # 1. Médico Veterinário (prioridade máxima)
+    # 1. Médico Veterinário (prioridade máxima — deve vir ANTES do filtro de medicina humana)
     if any(t in nome_lower for t in _TERMOS_VETERINARIO):
         return "veterinario"
 
-    # 2. Formação específica indesejada — descartar
+    # 2a. Medicina humana — SEMPRE excluir, independente de especialidade.
+    #     Regra de negócio: "Medicina ≠ Medicina Veterinária".
+    #     O check de veterinário acima garante que "Médico Veterinário" não chega aqui,
+    #     mas o lookahead negativo é adicionado para segurança defensiva.
+    #     Captura: "MÉDICO", "Médico", "medico", "Médico ESF", "Médico do Trabalho", etc.
+    if re.search(r'\bm[eé]dico[s]?\b(?!\s*-?\s*veterin)', nome_lower):
+        return None
+
+    # 2b. Demais formações específicas indesejadas — descartar
     if any(t in nome_lower for t in _TERMOS_FORMACAO_ESPECIFICA_INDESEJADA):
         return None
 

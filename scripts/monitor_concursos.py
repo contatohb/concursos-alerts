@@ -213,6 +213,20 @@ def _is_veterinario(texto: str) -> bool:
     return any(c in tl for c in CARGOS_VETERINARIO)
 
 
+def _is_medicina_humana(texto: str) -> bool:
+    """
+    Retorna True se o texto indica medicina humana (NÃO veterinária).
+    Regra de negócio: "Medicina ≠ Medicina Veterinária — Medicina somente não entra."
+    Usa word-boundary para não descartar "Médico Veterinário" aqui (tratado por
+    _is_veterinario, que tem prioridade sobre esta função em todos os fluxos).
+    """
+    tl = texto.lower()
+    # \bm[eé]dico[s]?\b captura "médico", "medico", "médicos", "medicos".
+    # Lookahead negativo exclui "médico veterinário" / "médico-veterinário"
+    # para que a função seja segura mesmo quando chamada isoladamente.
+    return bool(re.search(r'\bm[eé]dico[s]?\b(?!\s*-?\s*veterin)', tl))
+
+
 def _is_qualquer_superior(texto: str) -> bool:
     """Verifica se o cargo aceita qualquer curso superior (sem exigir formação específica)."""
     tl = texto.lower()
@@ -256,6 +270,7 @@ def _atende_criterios(concurso: Dict) -> bool:
 
     Exemplos que NÃO PASSAM:
       - Engenheiro com R$ 20.000 -> NÃO (formação específica)
+      - Médico (humano) com R$ 20.000 -> NÃO (medicina humana fora do escopo)
       - Veterinário com R$ 5.000 -> NÃO (salário abaixo)
       - Qualquer cargo com R$ 8.000 -> NÃO (salário abaixo)
     """
@@ -267,8 +282,15 @@ def _atende_criterios(concurso: Dict) -> bool:
     # Texto representativo do cargo (sem misturar com salário de outros cargos)
     texto_cargo = f"{cargo} {titulo} {nivel} {vagas}"
 
-    # Verificar se o cargo se enquadra em alguma das categorias
+    # Verificar se o cargo se enquadra em alguma das categorias.
+    # ORDEM IMPORTA: veterinário vem antes de medicina_humana para que
+    # "Médico Veterinário" seja corretamente incluído e não excluído.
     eh_veterinario = _is_veterinario(texto_cargo)
+
+    # Medicina humana: excluir de imediato, a menos que seja veterinária
+    if not eh_veterinario and _is_medicina_humana(texto_cargo):
+        return False
+
     eh_qualquer_superior = _is_qualquer_superior(texto_cargo)
     eh_nivel_medio = _is_nivel_medio(texto_cargo)
 

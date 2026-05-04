@@ -1,21 +1,29 @@
-services:
-  - type: cron
-    name: concursos-alerts-daily
-    runtime: python
-    plan: free
-    schedule: "0 11 * * *"
-    buildCommand: pip install -r requirements.txt
-    startCommand: cd scripts && python executar_alerta_diario.py
-    envVars:
-      - key: SUPABASE_URL
-        value: https://wuadkgmggkmyglxpxeyh.supabase.co
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: GMAIL_APP_PASSWORD
-        sync: false
-      - key: GMAIL_SMTP_PASSWORD
-        sync: false
-      - key: MONITOR_SMTP_PASS
-        sync: false
-      - key: GMAIL_SMTP_USER
-        value: huddsong@gmail.com
+# Cron job desativado — o agendamento diário é gerenciado exclusivamente pelo
+# GitHub Actions (.github/workflows/daily-concursos-alert.yml), que também
+# persiste o histórico de concursos vistos (concursos_seen.json) via git commit.
+# Manter dois agendamentos simultâneos resultava em dois emails por dia.
+#
+# Para reativar o Render.com, descomente o bloco abaixo E remova o agendamento
+# do GitHub Actions para evitar duplicatas.
+#
+# services:
+#   - type: cron
+#     name: concursos-alerts-daily
+#     runtime: python
+#     plan: free
+#     schedule: "0 11 * * *"
+#     buildCommand: pip install -r requirements.txt
+#     startCommand: cd scripts && python executar_alerta_diario.py
+#     envVars:
+#       - key: SUPABASE_URL
+#         value: https://wuadkgmggkmyglxpxeyh.supabase.co
+#       - key: SUPABASE_ANON_KEY
+#         sync: false
+#       - key: GMAIL_APP_PASSWORD
+#         sync: false
+#       - key: GMAIL_SMTP_PASSWORD
+#         sync: false
+#       - key: MONITOR_SMTP_PASS
+#         sync: false
+#       - key: GMAIL_SMTP_USER
+#         value: huddsong@gmail.com
