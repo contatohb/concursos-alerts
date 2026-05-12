@@ -18,4 +18,4 @@ services:
       - key: MONITOR_SMTP_PASS
         sync: false
       - key: GMAIL_SMTP_USER
-        value: huddsong@gmail.com
+        value: huddsonviana@gmail.com

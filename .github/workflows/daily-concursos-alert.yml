@@ -35,12 +35,12 @@ jobs:
           retry_wait_seconds: 60
           command: cd scripts && python executar_alerta_diario.py
         env:
-          MONITOR_RECIPIENT: huddsong@gmail.com
-          GMAIL_SENDER: huddsong@gmail.com
+          MONITOR_RECIPIENT: huddsonviana@gmail.com
+          GMAIL_SENDER: huddsonviana@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          GMAIL_SMTP_USER: huddsong@gmail.com
+          GMAIL_SMTP_USER: huddsonviana@gmail.com
           GMAIL_SMTP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          MONITOR_SMTP_USER: huddsong@gmail.com
+          MONITOR_SMTP_USER: huddsonviana@gmail.com
           MONITOR_SMTP_PASS: ${{ secrets.GMAIL_APP_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

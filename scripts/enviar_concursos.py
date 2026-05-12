@@ -59,7 +59,7 @@ SMTP_HOST    = os.getenv("MONITOR_SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT    = int(os.getenv("MONITOR_SMTP_PORT", "587"))
 SMTP_USER    = os.getenv("GMAIL_SMTP_USER") or os.getenv("MONITOR_SMTP_USER", "")
 SMTP_PASS    = os.getenv("GMAIL_SMTP_PASSWORD") or os.getenv("MONITOR_SMTP_PASS", "")
-RECIPIENT    = os.getenv("MONITOR_RECIPIENT", "huddsong@gmail.com")
+RECIPIENT    = os.getenv("MONITOR_RECIPIENT", "huddsonviana@gmail.com")
 SENDER       = os.getenv("MONITOR_SENDER", SMTP_USER)
 
 EMAIL_PENDENTE_PATH = _PROJECT_DIR / "data" / "email_pendente.json"

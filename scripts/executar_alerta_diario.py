@@ -38,7 +38,7 @@ except Exception:
 
 SEEN_PATH           = os.path.join(_PROJECT_DIR, "data", "concursos_seen.json")
 EMAIL_PENDENTE_PATH = os.path.join(_PROJECT_DIR, "data", "email_pendente.json")
-RECIPIENT           = os.getenv("MONITOR_RECIPIENT", "huddsong@gmail.com")
+RECIPIENT           = os.getenv("MONITOR_RECIPIENT", "huddsonviana@gmail.com")
 
 
 def _load_json(path: str) -> dict:
