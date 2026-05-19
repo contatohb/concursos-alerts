@@ -59,8 +59,16 @@ SMTP_HOST    = os.getenv("MONITOR_SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT    = int(os.getenv("MONITOR_SMTP_PORT", "587"))
 SMTP_USER    = os.getenv("GMAIL_SMTP_USER") or os.getenv("MONITOR_SMTP_USER", "")
 SMTP_PASS    = os.getenv("GMAIL_SMTP_PASSWORD") or os.getenv("MONITOR_SMTP_PASS", "")
-RECIPIENT    = os.getenv("MONITOR_RECIPIENT", "huddsonviana@gmail.com")
+RECIPIENT    = os.getenv("MONITOR_RECIPIENT", "hudsonborges@hb-advisory.com.br")
 SENDER       = os.getenv("MONITOR_SENDER", SMTP_USER)
+
+# ── Mailgun (método principal — funciona em GitHub Actions/Render) ──
+MAILGUN_API_KEY  = os.getenv("MAILGUN_API_KEY", "").strip()
+MAILGUN_DOMAIN   = os.getenv("MAILGUN_DOMAIN", "hb-advisory.com.br").strip()
+MAILGUN_BASE_URL = os.getenv("MAILGUN_BASE_URL", "https://api.mailgun.net").rstrip("/")
+if not MAILGUN_BASE_URL.endswith("/v3"):
+    MAILGUN_BASE_URL = MAILGUN_BASE_URL + "/v3"
+FROM_EMAIL = os.getenv("FROM_EMAIL", f"Intellicore Concursos <noreply@{MAILGUN_DOMAIN}>")
 
 EMAIL_PENDENTE_PATH = _PROJECT_DIR / "data" / "email_pendente.json"
 ENVIO_LOG_PATH      = _PROJECT_DIR / "data" / "envio_log.json"
@@ -97,6 +105,35 @@ def _texto_plano_de_html(html: str) -> str:
     txt = re.sub(r'\n{3,}', '\n\n', txt)
     txt = re.sub(r'[ \t]{2,}', ' ', txt)
     return txt.strip()
+
+
+def _enviar_mailgun(subject: str, body_html: str, recipient: str) -> tuple[bool, str]:
+    """Envia email HTML via API do Mailgun. Não requer dependências locais."""
+    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
+        return False, "Mailgun não configurado (MAILGUN_API_KEY ou MAILGUN_DOMAIN ausentes)"
+    try:
+        url = f"{MAILGUN_BASE_URL}/{MAILGUN_DOMAIN}/messages"
+        import time as _t
+        for attempt in range(1, 4):
+            try:
+                import requests as _req
+                resp = _req.post(
+                    url,
+                    auth=("api", MAILGUN_API_KEY),
+                    data={"from": FROM_EMAIL, "to": [recipient], "subject": subject, "html": body_html, "text": " "},
+                    timeout=45,
+                )
+                if resp.status_code == 200:
+                    logger.info(f"Email enviado via Mailgun para {recipient} (id={resp.json().get('id','?')})")
+                    return True, "OK (Mailgun)"
+                logger.warning(f"Mailgun tentativa {attempt}/3: HTTP {resp.status_code}: {resp.text[:200]}")
+            except Exception as _e:
+                logger.warning(f"Mailgun tentativa {attempt}/3: {_e}")
+            if attempt < 3:
+                _t.sleep(5 * attempt)
+        return False, "Mailgun falhou após 3 tentativas"
+    except Exception as exc:
+        return False, f"Mailgun erro: {exc}"
 
 
 def enviar_smtp(subject: str, body_html: str, recipient: str,
@@ -329,36 +366,48 @@ def main():
     ultimo_erro   = ""
     tentativa_num = 0
 
-    for tentativa in range(1, MAX_TENTATIVAS + 1):
-        tentativa_num = tentativa
-        logger.info(f"--- Tentativa {tentativa}/{MAX_TENTATIVAS} ---")
-
-        # Tentar envio TLS (587) ou SSL (465) dependendo da porta atual
-        if SMTP_PORT == 465:
-            ok, msg = _enviar_smtp_ssl(subject, body_html, recipient)
-        else:
-            ok, msg = enviar_smtp(subject, body_html, recipient)
-
-        if ok:
+    # Tentativa 0: Mailgun (método principal — funciona em GitHub Actions)
+    if MAILGUN_API_KEY and MAILGUN_DOMAIN:
+        ok_mg, msg_mg = _enviar_mailgun(subject, body_html, recipient)
+        if ok_mg:
             sucesso = True
             ultimo_erro = ""
-            logger.info(f"Envio bem-sucedido na tentativa {tentativa}")
-            break
+            tentativa_num = 1
+            logger.info("Email enviado via Mailgun.")
         else:
-            ultimo_erro = msg
-            logger.warning(f"Tentativa {tentativa} falhou: {msg}")
+            logger.warning(f"Mailgun falhou: {msg_mg}. Tentando SMTP...")
 
-            if tentativa < MAX_TENTATIVAS:
-                corrigido, desc = _diagnosticar_e_corrigir(msg)
-                if corrigido:
-                    logger.info(f"Autocorreção aplicada: {desc}")
-                else:
-                    logger.error(f"Autocorreção não possível: {desc}")
-                    break
-                # Backoff exponencial
-                espera = BACKOFF_BASE * tentativa
-                logger.info(f"Aguardando {espera}s antes da próxima tentativa...")
-                time.sleep(espera)
+    if not sucesso:
+        for tentativa in range(1, MAX_TENTATIVAS + 1):
+            tentativa_num = tentativa
+            logger.info(f"--- Tentativa SMTP {tentativa}/{MAX_TENTATIVAS} ---")
+
+            # Tentar envio TLS (587) ou SSL (465) dependendo da porta atual
+            if SMTP_PORT == 465:
+                ok, msg = _enviar_smtp_ssl(subject, body_html, recipient)
+            else:
+                ok, msg = enviar_smtp(subject, body_html, recipient)
+
+            if ok:
+                sucesso = True
+                ultimo_erro = ""
+                logger.info(f"Envio SMTP bem-sucedido na tentativa {tentativa}")
+                break
+            else:
+                ultimo_erro = msg
+                logger.warning(f"Tentativa {tentativa} falhou: {msg}")
+
+                if tentativa < MAX_TENTATIVAS:
+                    corrigido, desc = _diagnosticar_e_corrigir(msg)
+                    if corrigido:
+                        logger.info(f"Autocorreção aplicada: {desc}")
+                    else:
+                        logger.error(f"Autocorreção não possível: {desc}")
+                        break
+                    # Backoff exponencial
+                    espera = BACKOFF_BASE * tentativa
+                    logger.info(f"Aguardando {espera}s antes da próxima tentativa...")
+                    time.sleep(espera)
 
     # ── Auditoria pós-envio ────────────────────────────────────────
     auditoria_ok     = False
