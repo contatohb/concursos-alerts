@@ -28,15 +28,8 @@ jobs:
           python -m pip install requests beautifulsoup4 python-dotenv
 
       - name: Send daily concursos alert
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_wait_seconds: 60
-          command: cd scripts && python executar_alerta_diario.py
         env:
           MONITOR_RECIPIENT: ${{ secrets.MONITOR_RECIPIENT }}
-          GMAIL_SENDER: ${{ secrets.GMAIL_SMTP_USER }}
           GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
@@ -44,11 +37,11 @@ jobs:
           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          GMAIL_SMTP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          MONITOR_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
-          MONITOR_SMTP_PASS: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: cd scripts && python executar_alerta_diario.py
 
       - name: Commit updated seen history
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -56,9 +49,3 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: update concursos seen history [skip ci]"
           git pull --rebase origin main || true
           git push || true
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "Concursos alert job failed at $(date)"
-          exit 1
