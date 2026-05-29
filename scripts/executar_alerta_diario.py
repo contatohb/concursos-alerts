@@ -118,6 +118,10 @@ def main() -> int:
     novos, seen_novo = filtrar_novos_concursos(concursos, seen_atual)
     logger.info(f"Concursos NOVOS (não alertados antes): {len(novos)}")
 
+    if len(novos) == 0:
+        logger.info("Nenhum concurso novo — email não enviado.")
+        return 0
+
     # ── 5. Gerar email ─────────────────────────────────────────────
     corpo_html  = formatar_email_html(novos, erros)
     corpo_texto = formatar_email_concursos(novos, erros)
