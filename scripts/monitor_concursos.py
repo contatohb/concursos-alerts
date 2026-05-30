@@ -1273,6 +1273,13 @@ def _concurso_id(c: Dict) -> str:
     # Demais fontes: usar link_detalhe ou link_inscricao
     link = c.get("link_detalhe", "") or c.get("link_inscricao", "")
     if link:
+        # PCI Concursos: link_detalhe aponta para PDF com hash variável no path
+        # (ex: /SLUG/NUMERIC_ID/HASH_VARIAVEL/edital.pdf — hash muda a cada publicação)
+        # Normalizar para ID estável: pci:SLUG:NUMERIC_ID
+        if "pciconcursos.com.br" in link:
+            m_pci = re.search(r'pciconcursos\.com\.br/([^/]+)/(\d{5,})/', link)
+            if m_pci:
+                return f"pci:{m_pci.group(1)}:{m_pci.group(2)}"
         return link
     return f"{orgao}|{cargo}"
 
