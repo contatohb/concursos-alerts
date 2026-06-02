@@ -187,6 +187,14 @@ def _classificar_cargo(nome_cargo: str) -> Optional[str]:
     ]
     if any(nome_lower.startswith(p) for p in _PREFIXOS_NAO_CARGO):
         return None
+    # Rejeitar cabeçalhos de tabela de cotas (AC PCD PN PI PQ = colunas de vagas)
+    # Ex: "Nível Superior AC PCD PN PI PQ AC PCD PN PI PQ lotação semanal"
+    _TERMOS_CABECALHO_TABELA = [" ac ", " pcd ", " pn ", " pi ", " pq ", "vagas efetivas",
+                                 "cadastro de reserva", "carga horária", "carga horaria",
+                                 "lotação", "lotacao", "semanal", "salário base", "salario base"]
+    nome_para_busca = f" {nome_lower} "
+    if sum(1 for t in _TERMOS_CABECALHO_TABELA if t in nome_para_busca) >= 2:
+        return None
     # Rejeitar se contém apenas palavras de 2 letras ou menos (siglas, fragmentos)
     palavras = [p for p in nome_cargo.split() if len(p) > 2]
     if not palavras:
