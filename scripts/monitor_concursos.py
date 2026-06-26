@@ -1054,6 +1054,12 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
     # ── Deduplicação cross-source ───────────────────────────────────────────
     # Mesmo concurso pode aparecer em PCI E ConcursosNoBrasil com links diferentes.
     # Chave de dedup: órgão normalizado + primeiras palavras do cargo.
+    # Siglas de estados brasileiros para normalização de orgão
+    _UFS_BR = {
+        "ac","al","ap","am","ba","ce","df","es","go","ma","mt","ms","mg",
+        "pa","pb","pr","pe","pi","rj","rn","rs","ro","rr","sc","sp","se","to"
+    }
+
     def _dedup_key(c: Dict) -> str:
         orgao_n = re.sub(r"[^\w\s]", "", c.get("orgao", "").lower().strip())
         orgao_n = re.sub(r"\s+", " ", orgao_n).strip()
@@ -1063,6 +1069,12 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
             if orgao_n.startswith(prefix):
                 orgao_n = orgao_n[len(prefix):]
                 break
+        # Remover sigla de estado do final (ex: "Ponta Grossa PR" → "Ponta Grossa")
+        # Evita duplicatas entre "Prefeitura de Ponta Grossa" (PCI) e
+        # "Prefeitura de Ponta Grossa-PR" (Blog Convet) na mesma execução.
+        _words = orgao_n.split()
+        if _words and _words[-1] in _UFS_BR:
+            orgao_n = " ".join(_words[:-1]).strip()
         cargo_n = re.sub(r"[^\w\s]", "", c.get("cargo", "").lower().strip())
         cargo_n = " ".join(cargo_n.split()[:4])
         return f"{orgao_n}|{cargo_n}"
@@ -1288,15 +1300,22 @@ def filtrar_novos_concursos(concursos: List[Dict], seen: dict) -> Tuple[List[Dic
     """
     Filtra apenas concursos não vistos anteriormente.
 
+    Salva tanto _concurso_id quanto "dk:{_dedup_key}" no seen,
+    garantindo que fontes "perdedoras" no dedup cross-source não
+    reapareçam em emails de dias seguintes com IDs diferentes.
+
     Returns:
         (novos_concursos, seen_atualizado)
     """
     novos = []
     for c in concursos:
         cid = _concurso_id(c)
-        if cid and cid not in seen:
+        dkey = f"dk:{_dedup_key(c)}"  # chave de dedup cross-source
+        # Filtrar por ID específico E por chave de dedup
+        if (cid and cid not in seen) and dkey not in seen:
             novos.append(c)
             seen[cid] = True
+            seen[dkey] = True  # evita que fonte "perdedora" reapareça no dia seguinte
     return novos, seen
 
 
