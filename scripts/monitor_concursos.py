@@ -1054,31 +1054,6 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
     # ── Deduplicação cross-source ───────────────────────────────────────────
     # Mesmo concurso pode aparecer em PCI E ConcursosNoBrasil com links diferentes.
     # Chave de dedup: órgão normalizado + primeiras palavras do cargo.
-    # Siglas de estados brasileiros para normalização de orgão
-    _UFS_BR = {
-        "ac","al","ap","am","ba","ce","df","es","go","ma","mt","ms","mg",
-        "pa","pb","pr","pe","pi","rj","rn","rs","ro","rr","sc","sp","se","to"
-    }
-
-    def _dedup_key(c: Dict) -> str:
-        orgao_n = re.sub(r"[^\w\s]", "", c.get("orgao", "").lower().strip())
-        orgao_n = re.sub(r"\s+", " ", orgao_n).strip()
-        for prefix in ["prefeitura municipal de ", "prefeitura de ",
-                       "camara municipal de ", "governo do estado de ",
-                       "secretaria ", "municipio de "]:
-            if orgao_n.startswith(prefix):
-                orgao_n = orgao_n[len(prefix):]
-                break
-        # Remover sigla de estado do final (ex: "Ponta Grossa PR" → "Ponta Grossa")
-        # Evita duplicatas entre "Prefeitura de Ponta Grossa" (PCI) e
-        # "Prefeitura de Ponta Grossa-PR" (Blog Convet) na mesma execução.
-        _words = orgao_n.split()
-        if _words and _words[-1] in _UFS_BR:
-            orgao_n = " ".join(_words[:-1]).strip()
-        cargo_n = re.sub(r"[^\w\s]", "", c.get("cargo", "").lower().strip())
-        cargo_n = " ".join(cargo_n.split()[:4])
-        return f"{orgao_n}|{cargo_n}"
-
     todos_dedup: List[Dict] = []
     seen_dedup_cs: set = set()
     for _c in todos:
@@ -1264,6 +1239,38 @@ def buscar_concursos(enriquecer_detalhes: bool = True,
 # ─────────────────────────────────────────────────────────────────
 # Deduplicação
 # ─────────────────────────────────────────────────────────────────
+
+# Siglas de estados brasileiros para normalização de orgão (usado por _dedup_key)
+_UFS_BR = {
+    "ac","al","ap","am","ba","ce","df","es","go","ma","mt","ms","mg",
+    "pa","pb","pr","pe","pi","rj","rn","rs","ro","rr","sc","sp","se","to"
+}
+
+
+def _dedup_key(c: Dict) -> str:
+    """Chave de dedup cross-source: órgão normalizado + primeiras palavras do cargo.
+
+    Definida em escopo de módulo (não aninhada) para que possa ser reutilizada
+    tanto por buscar_concursos() quanto por filtrar_novos_concursos().
+    """
+    orgao_n = re.sub(r"[^\w\s]", "", c.get("orgao", "").lower().strip())
+    orgao_n = re.sub(r"\s+", " ", orgao_n).strip()
+    for prefix in ["prefeitura municipal de ", "prefeitura de ",
+                   "camara municipal de ", "governo do estado de ",
+                   "secretaria ", "municipio de "]:
+        if orgao_n.startswith(prefix):
+            orgao_n = orgao_n[len(prefix):]
+            break
+    # Remover sigla de estado do final (ex: "Ponta Grossa PR" → "Ponta Grossa")
+    # Evita duplicatas entre "Prefeitura de Ponta Grossa" (PCI) e
+    # "Prefeitura de Ponta Grossa-PR" (Blog Convet) na mesma execução.
+    _words = orgao_n.split()
+    if _words and _words[-1] in _UFS_BR:
+        orgao_n = " ".join(_words[:-1]).strip()
+    cargo_n = re.sub(r"[^\w\s]", "", c.get("cargo", "").lower().strip())
+    cargo_n = " ".join(cargo_n.split()[:4])
+    return f"{orgao_n}|{cargo_n}"
+
 
 def _concurso_id(c: Dict) -> str:
     """Gera ID único para um concurso."""
